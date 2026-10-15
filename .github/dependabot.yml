@@ -1,0 +1,49 @@
+# Dependabot: ukentlige PR-er. Workflowen kjører test og audit på dem; deploy skjer
+# først når Aksel merger til main.
+version: 2
+updates:
+  # Oppdaterer SHA-pinnene i workflowene (versjonskommentaren følger med).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Oslo
+    cooldown:
+      default-days: 5
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "Actions"
+
+  - package-ecosystem: composer
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Oslo
+    cooldown:
+      default-days: 3
+    groups:
+      composer:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "Composer"
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Oslo
+    cooldown:
+      default-days: 3
+    groups:
+      npm:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "npm"

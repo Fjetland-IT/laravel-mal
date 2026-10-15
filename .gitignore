@@ -1,0 +1,43 @@
+*.log
+.DS_Store
+.env
+.env.backup
+.env.production
+.phpactor.json
+.phpunit.result.cache
+/.codex
+/.cursor/
+/.idea
+/.nova
+/.phpunit.cache
+/.vscode
+/.zed
+/auth.json
+/node_modules
+/public/build
+/public/fonts-manifest.dev.json
+/public/hot
+/public/storage
+/storage/*.key
+/storage/pail
+/vendor
+_ide_helper.php
+Homestead.json
+Homestead.yaml
+Thumbs.db
+
+# Filament-assets publiseres av `filament:upgrade` ved hver composer install/update
+# (lokalt og i Actions), så de trenger ikke ligge i main.
+/public/css/filament
+/public/fonts/filament
+/public/js/filament
+
+# Privat scratch, hemmeligheter og dumper – skal aldri til git
+_ignore/
+_to_delete/
+*.sql
+*.sql.gz
+*.dump
+
+# Claude-arbeidsfiler (utkast, forhåndsvisninger, logger, engangsskript)
+/Claude outputs/
