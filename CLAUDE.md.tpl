@@ -34,8 +34,11 @@
 - `~/Dev/{{REPO_NAVN}}`, satt opp med `~/Dev/_oppsett/hent-app.sh {{REPO_NAVN}}`. Lokal `.env` bruker
   SQLite, fil-cache og mail til logg.
 - Utkast, forhåndsvisninger, logger og engangsskript legges i `Claude outputs/` (gitignorert).
-- Tester: `php artisan test`. Composer og npm kjøres i Terminal på Macen (Packagist er blokkert fra
-  Claude-skyen). npm er ikke på PATH i ikke-interaktive zsh-skript; se `~/Dev/_oppsett/config`.
+- Tester: `php artisan test`. Composer kjøres i Terminal på Macen (Packagist er blokkert fra
+  Claude-skyen).
+- Node er ikke installert på Macen. npm kjøres i Docker (`node:24`, samme major som Actions) med
+  `~/Dev/_oppsett/npm.sh`, f.eks. `npm.sh ci`, `npm.sh run build` og `npm.sh run dev` (Vite på
+  `localhost:5173`). Docker Desktop må kjøre, og `node_modules` har Linux-binærer.
 
 ## Regler
 - Norsk i UI, kommentarer og commit-meldinger.

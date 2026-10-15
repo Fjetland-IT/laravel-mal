@@ -78,11 +78,12 @@ Serveren henter `deploy` med en egen deploy-nøkkel (bare lesing) på repoet.
 ## Lokalt
 
 `~/Dev/_oppsett/hent-app.sh <repo>` kloner og setter opp `.env` (SQLite, fil-cache, mail til logg),
-`composer install`, `npm ci`, nøkkel, migrering og tester. For hånd:
+`composer install`, `npm ci` og bygg, nøkkel, migrering og tester. Node er ikke installert på Macen;
+npm kjøres i Docker via `~/Dev/_oppsett/npm.sh` (Docker Desktop må kjøre). For hånd:
 
 ```sh
 composer install
-npm ci && npm run build
+~/Dev/_oppsett/npm.sh ci && ~/Dev/_oppsett/npm.sh run build
 cp .env.example .env    # og sett lokale verdier, se toppen av fila
 php artisan key:generate
 php artisan migrate
