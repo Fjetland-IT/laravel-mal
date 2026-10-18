@@ -1,7 +1,7 @@
 name: Test, bygg og deploy
 
 # main: test → bygg orphan-grenen `deploy` (prod-vendor + public/build) → SSH til vps1,
-# der app-brukerens authorized_keys bare tillater pull-deploy.sh.
+# der app-brukerens authorized_keys bare tillater pull-deploy.sh, som sjekker /up mot 127.0.0.1 (O13).
 # PR-er (f.eks. Dependabot): bare test.
 
 on:
@@ -135,7 +135,7 @@ jobs:
         if: env.DEPLOY_HOST == '' || env.DEPLOY_USER == ''
         run: echo "::notice::DEPLOY_HOST/DEPLOY_USER mangler – deploy-grenen er bygget, men ingenting er sendt til serveren."
 
-      - name: Kjør pull-deploy.sh på serveren
+      - name: Kjør pull-deploy.sh og sjekk /up lokalt
         if: env.DEPLOY_HOST != '' && env.DEPLOY_USER != ''
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -148,19 +148,38 @@ jobs:
           printf '%s\n' "$DEPLOY_SSH_KEY" > "$dir/key"
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$dir/known_hosts"
           chmod 600 "$dir/key" "$dir/known_hosts"
-          # Nøkkelen har command="…/pull-deploy.sh",restrict på serveren; kommandoen her ignoreres.
-          ssh -i "$dir/key" \
-              -o IdentitiesOnly=yes -o BatchMode=yes \
-              -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$dir/known_hosts" \
-              -o ConnectTimeout=20 \
-              "$DEPLOY_USER@$DEPLOY_HOST" deploy
+          # Nøkkelen har command="/srv/<app>/pull-deploy.sh",restrict på vps1, så bare det skriptet kan startes.
+          # Ordene etter vertsnavnet kommer fram som SSH_ORIGINAL_COMMAND: «--helsesjekk» får skriptet til å
+          # sjekke /up mot nginx på 127.0.0.1 etter deployen, forbi Cloudflare (O13: Bot Fight Mode utfordrer
+          # GitHub-runnere og kan ikke unntas på free-plan). Skriptets exit-kode styrer jobben.
+          kjor() {
+            ssh -i "$dir/key" \
+                -o IdentitiesOnly=yes -o BatchMode=yes \
+                -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$dir/known_hosts" \
+                -o ConnectTimeout=20 \
+                "$DEPLOY_USER@$DEPLOY_HOST" deploy --helsesjekk | tee "$dir/utskrift"
+          }
+          sjekket() { grep -Eq '^[0-9-]{10} [0-9:]{8} Helsesjekk lokalt OK: ' "$dir/utskrift"; }
+          kjor
+          # En pull-deploy.sh fra før O13 henter den nye versjonen, men fullfører med den gamle og sjekker
+          # ikke /up. Da kjøres den nye én gang til (trygt å gjenta: fetch, migrate, optimize).
+          if ! sjekket; then
+            echo "::notice::pull-deploy.sh på serveren var eldre og sjekket ikke /up – kjører den nye versjonen."
+            kjor
+            sjekket || { echo "::error::pull-deploy.sh rapporterte ingen lokal helsesjekk"; exit 1; }
+          fi
 
-      - name: Helsesjekk
+      - name: Offentlig sjekk via Cloudflare (bare varsel)
         if: env.DEPLOY_HOST != '' && env.DEPLOY_USER != '' && env.HELSESJEKK_URL != ''
         run: |
-          for i in 1 2 3 4 5 6; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$HELSESJEKK_URL" || true)
-            if [ "$code" = "200" ]; then echo "Helsesjekk OK ($HELSESJEKK_URL)"; exit 0; fi
-            echo "Forsøk $i: HTTP $code"; sleep 10
-          done
-          echo "::error::$HELSESJEKK_URL svarte ikke 200"; exit 1
+          # Avgjør ikke jobben: /up er alt sjekket lokalt på vps1. Med Bot Fight Mode (lite.beer, litepils.no)
+          # får GitHub-runnere en managed challenge (403 med cf-mitigated: challenge); det er ventet.
+          hode="$RUNNER_TEMP/helsesjekk-hode"
+          code=$(curl -s -o /dev/null -D "$hode" -w '%{http_code}' --max-time 10 "$HELSESJEKK_URL" || true)
+          if [ "$code" = "200" ]; then
+            echo "Offentlig sjekk OK ($HELSESJEKK_URL)"
+          elif grep -qi '^cf-mitigated: *challenge' "$hode" 2>/dev/null; then
+            echo "Cloudflare utfordret runneren ($HELSESJEKK_URL, HTTP $code) – ventet med Bot Fight Mode."
+          else
+            echo "::warning::$HELSESJEKK_URL svarte HTTP $code via Cloudflare (lokalt på vps1 svarte /up 200)."
+          fi

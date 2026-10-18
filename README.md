@@ -67,8 +67,11 @@ Repo-secrets (`Settings → Secrets and variables → Actions`):
 | `DEPLOY_SSH_KEY` | privat del av Actions-nøkkelen (ed25519, uten passfrase) |
 | `DEPLOY_KNOWN_HOSTS` | `45.88.201.138 ssh-ed25519 AAAA…` (vertsnøkkelen til vps1) |
 
-Valgfri repo-variabel `HELSESJEKK_URL` (f.eks. `https://eurobonus.guide/up`): workflowen sjekker at den
-svarer 200 etter deploy. Ikke for verter bak Cloudflare Access (der gir Access en omdirigering).
+Etter deploy sjekker `pull-deploy.sh` `/up` mot nginx på 127.0.0.1 (vert fra `APP_URL`), forbi Cloudflare.
+Workflowen ber om sjekken med `deploy --helsesjekk` (kommer fram som `SSH_ORIGINAL_COMMAND`), og
+skriptets exit-kode styrer jobben (O13). Valgfri repo-variabel `HELSESJEKK_URL` (f.eks.
+`https://eurobonus.guide/up`) sjekkes i tillegg via Cloudflare, men bare som varsel: Bot Fight Mode gir
+GitHub-runnere en managed challenge, og bak Cloudflare Access svarer Access med en omdirigering.
 
 På serveren, i `~<app>/.ssh/authorized_keys`, slik at nøkkelen bare kan starte deploy:
 
