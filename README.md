@@ -137,12 +137,15 @@ Containere som ligner vps1, styrt med `./dev` (Docker Desktop må kjøre):
   mot Mailpit, `QUEUE_CONNECTION=sync` (ingen køarbeider lokalt), og egen `SESSION_COOKIE` per app, siden
   alle appene deler `localhost`. En `.env` fra `mac` brukes ikke: flytt den bort (`mv .env .env.mac`).
 - **Porter og navn:** prosjektnavnet er mappenavnet (`eurobonus.guide` → `eurobonus-guide`), så containere
-  og volumer aldri deles mellom apper. `APP_PORT` (fra 8100), `VITE_PORT` (fra 5173) og `MAILPIT_PORT` (fra
-  8025) velges ledige og ikke brukt av andre apper i `~/Dev/*/.env`, og skrives i `.env`. Alt publiseres bare
+  og volumer aldri deles mellom apper. `APP_PORT` (fra 8100), `VITE_PORT` (fra 5180) og `MAILPIT_PORT` (fra
+  8025) velges ledige: ingen annen app i `~/Dev/*/.env` har dem, ingen fast vertsport i en annen apps
+  `docker-compose.yml`/`compose.yaml` bruker dem (eldre stacker, også stoppet), og ingenting lytter på dem.
+  De skrives i `.env`. Alt publiseres bare
   på 127.0.0.1; MySQL og Valkey publiseres ikke. Egne tillegg legges i `compose.override.yaml`
   (gitignorert), f.eks. `services: { mysql: { ports: ["127.0.0.1:33061:3306"] } }`.
 - **Tester:** `./dev test` setter `DB_CONNECTION=mysql` og `DB_DATABASE=<DB_DATABASE>_test`, som går foran
-  `<env>` i `phpunit.xml`. Testdatabasen lages av `docker/mysql/initdb/` første gang databasevolumet lages.
+  `<env>` i `phpunit.xml`. `./dev` lager testdatabasen (idempotent) med det lokale `DB_ROOT_PASSWORD` fra
+  `.env` før hver testkjøring.
   Actions tester fortsatt med SQLite.
 - **Bruker-ID:** `php` og `vite` kjører med din UID/GID (`./dev` setter `DEV_UID`/`DEV_GID`), så filer i
   repoet ikke blir eid av root på Linux.

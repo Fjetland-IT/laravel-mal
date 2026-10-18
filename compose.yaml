@@ -50,10 +50,10 @@ services:
             MYSQL_DATABASE: ${DB_DATABASE:?DB_DATABASE mangler i .env}
             MYSQL_USER: ${DB_USERNAME:?DB_USERNAME mangler i .env}
             MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD mangler i .env}
-            MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+            # Lokalt root-passord fra .env; ./dev bruker det til testdatabasen <DB_DATABASE>_test.
+            MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD mangler i .env}
         volumes:
             - mysql-data:/var/lib/mysql
-            - ./docker/mysql/initdb:/docker-entrypoint-initdb.d:ro
             - ./docker/mysql/lokal.cnf:/etc/mysql/conf.d/lokal.cnf:ro
         healthcheck:
             # mysqladmin ping gir 0 også ved «Access denied»; den feiler bare når serveren ikke svarer.

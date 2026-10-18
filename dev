@@ -51,7 +51,7 @@ krev_docker_valg() {
         docker) ;;
         mac) feil "denne appen bruker «mac» (.utvikling). Kjør php/composer på Macen, eller endre .utvikling til docker." ;;
         '') feil "ingen .utvikling i $ROT. Sett valget med «~/Dev/_oppsett/hent-app.sh $(basename "$ROT") --docker», eller skriv «docker» i .utvikling." ;;
-        *) feil "ukjent verdi i .utvikling: «$valg» (docker eller mac)" ;;
+        *) feil "ukjent verdi i .utvikling: «${valg}» (docker eller mac)" ;;
     esac
 }
 
@@ -81,7 +81,7 @@ krev_docker() {
 # fra CLAUDE.md, som på vps1; uten CLAUDE.md første del av mappenavnet (eurobonus.guide → eurobonus).
 MAPPENAVN="$(basename "$ROT")"
 PROSJEKT="$(printf '%s' "$MAPPENAVN" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9_-]/-/g' -e 's/^[^a-z0-9]*//')"
-[ -n "$PROSJEKT" ] || feil "kan ikke lage prosjektnavn av mappenavnet «$MAPPENAVN»"
+[ -n "$PROSJEKT" ] || feil "kan ikke lage prosjektnavn av mappenavnet «${MAPPENAVN}»"
 
 appnavn() {
     local navn=""
@@ -146,6 +146,15 @@ port_opptatt() {
             return 0
         fi
     done
+    # Faste vertsporter i andre apper sine compose-filer (eldre stacker med «8000:8000» o.l.), også
+    # når de er stoppet. Våre egne bruker ${APP_PORT} osv. og dekkes av .env over.
+    for f in ../*/docker-compose.yml ../*/docker-compose.yaml ../*/compose.yml ../*/compose.yaml; do
+        [ -f "$f" ] || continue
+        case "$f" in "../$MAPPENAVN/"*) continue ;; esac
+        if grep -Eq "^[[:space:]]*-[[:space:]]*[\"']?([0-9.]+:)?$p:[0-9]+|published:[[:space:]]*[\"']?$p([\"'[:space:]]|\$)" "$f" 2>/dev/null; then
+            return 0
+        fi
+    done
     # Noe lytter allerede på porten (Herd, en annen stack …)?
     if command -v nc >/dev/null 2>&1; then
         nc -z 127.0.0.1 "$p" >/dev/null 2>&1 && return 0
@@ -192,15 +201,16 @@ vis_adresser() {
 #    NØKKEL=verdi  sett bare hvis nøkkelen finnes
 #   -NØKKEL        kommenter ut
 lag_env() {
-    local app db app_port vite_port mail_port dbpass rpass ov tmp
+    local app db app_port vite_port mail_port dbpass rootpass rpass ov tmp
     [ -f .env.example ] || feil "ingen .env.example"
     command -v openssl >/dev/null 2>&1 || feil "openssl mangler (trengs for lokale passord)"
     app="$(appnavn)"
     db="$(printf '%s' "$app" | tr '-' '_')"
     finn_port 8100; app_port="$FUNNET_PORT"
-    finn_port 5173; vite_port="$FUNNET_PORT"
+    finn_port 5180; vite_port="$FUNNET_PORT"
     finn_port 8025; mail_port="$FUNNET_PORT"
     dbpass="$(openssl rand -hex 16)"
+    rootpass="$(openssl rand -hex 16)"
     rpass="$(openssl rand -hex 16)"
 
     ov="$(mktemp)"; tmp="$(mktemp)"
@@ -216,6 +226,7 @@ LOG_LEVEL=debug
 +DB_DATABASE=$db
 +DB_USERNAME=$db
 +DB_PASSWORD=$dbpass
++DB_ROOT_PASSWORD=$rootpass
 -DB_URL
 +REDIS_CLIENT=phpredis
 +REDIS_HOST=/run/valkey/valkey.sock
@@ -270,7 +281,7 @@ EOF
     ( umask 077; cp "$tmp" .env )
     rm -f "$tmp"
     chmod 600 .env
-    info "laget fra .env.example: MySQL «$db», Valkey-bruker «$app» med prefiks «$app:», Mailpit, lokale passord"
+    info "laget fra .env.example: MySQL «${db}», Valkey-bruker «${app}» med prefiks «$app:», Mailpit, lokale passord"
     info "porter: app $app_port, Vite $vite_port, Mailpit $mail_port"
 }
 
@@ -358,7 +369,21 @@ kommando_down() {
     rm -f public/hot
 }
 
-# Testene kjører mot <DB_DATABASE>_test (laget av docker/mysql/initdb), aldri mot utviklingsdatabasen.
+# sikre_testdatabase: lager <DB_DATABASE>_test og gir appens bruker tilgang (idempotent). Gjøres her og
+# ikke i mysql-bildets init-skript, så den finnes også når volumet er fra før eller første init feilet.
+sikre_testdatabase() {
+    local db bruker rot
+    db="$(env_verdi DB_DATABASE)"; bruker="$(env_verdi DB_USERNAME)"; rot="$(env_verdi DB_ROOT_PASSWORD)"
+    [ -n "$rot" ] || feil "DB_ROOT_PASSWORD mangler i .env (lokalt root-passord til MySQL-containeren). Lag .env på nytt med ./dev oppsett."
+    case "$db$bruker" in *[!A-Za-z0-9_]*) feil "DB_DATABASE/DB_USERNAME kan bare ha bokstaver, tall og _" ;; esac
+    kjorer mysql || dc up -d --wait mysql
+    dc exec -T -e "MYSQL_PWD=$rot" mysql mysql -uroot -e \
+        "CREATE DATABASE IF NOT EXISTS \`${db}_test\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+         GRANT ALL PRIVILEGES ON \`${db}_test\`.* TO '${bruker}'@'%';" \
+        || feil "fikk ikke laget testdatabasen ${db}_test"
+}
+
+# Testene kjører mot <DB_DATABASE>_test (sikre_testdatabase), aldri mot utviklingsdatabasen.
 # Miljøvariablene under har forrang foran <env> i phpunit.xml, som ellers velger SQLite i minnet.
 kommando_test() {
     local db
@@ -368,7 +393,9 @@ kommando_test() {
         advarsel "config er cachet; tømmer den så testmiljøet gjelder"
         php_i php artisan config:clear --no-interaction >/dev/null
     fi
-    local env_valg=(-e DB_CONNECTION=mysql -e DB_HOST=mysql -e DB_PORT=3306 -e "DB_DATABASE=${db}_test" -e DB_URL=)
+    sikre_testdatabase
+    local -a env_valg
+    env_valg=(-e DB_CONNECTION=mysql -e DB_HOST=mysql -e DB_PORT=3306 -e "DB_DATABASE=${db}_test" -e DB_URL=)
     if kjorer php; then
         dc exec "${TTY_VALG[@]+"${TTY_VALG[@]}"}" "${env_valg[@]}" php php artisan test "$@"
     else
