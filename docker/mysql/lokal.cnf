@@ -1,0 +1,5 @@
+# Som /etc/mysql/mysql.conf.d/zz-vps.cnf på vps1 (Fjetland-IT/vps, bootstrap.sh). bind-address er
+# containerens egen; porten publiseres ikke ut av compose-nettet.
+[mysqld]
+local_infile = 0
+skip-name-resolve = 1

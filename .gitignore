@@ -41,3 +41,6 @@ _to_delete/
 
 # Claude-arbeidsfiler (utkast, forhåndsvisninger, logger, engangsskript)
 /Claude outputs/
+
+# Egne tillegg til det lokale Docker-miljøet (compose.yaml), f.eks. en MySQL-port til TablePlus
+/compose.override.yaml

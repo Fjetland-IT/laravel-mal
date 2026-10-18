@@ -1,0 +1,416 @@
+#!/usr/bin/env bash
+#
+# ./dev – lokalt utviklingsmiljø i Docker, for apper der .utvikling er «docker».
+# Tjenestene ligner vps1: PHP 8.5-FPM + nginx, MySQL 8.4, Valkey på unix-socket med ACL,
+# Node 24 for Vite med HMR, og Mailpit som fanger all e-post. Se compose.yaml og README («Lokalt»).
+#
+#   ./dev oppsett [--uten-npm] [--uten-tester]
+#                        første gang (kan kjøres på nytt): .env, porter, image, composer, npm,
+#                        nøkkel, migrering, tester, og start
+#   ./dev up             start alt (Vite også); viser adressene
+#   ./dev down [-v]      stopp (-v sletter også databasen, Valkey-data og cachen)
+#   ./dev artisan …      php artisan i php-containeren
+#   ./dev composer …     composer i php-containeren
+#   ./dev npm …          npm i node-containeren (Vite-serveren startes av ./dev up)
+#   ./dev test …         php artisan test mot MySQL-databasen <DB_DATABASE>_test
+#   ./dev mysql          mysql-klient mot appens database
+#   ./dev sh             skall i php-containeren
+#   ./dev logs [tjeneste], ./dev ps, ./dev porter, ./dev build
+#   ./dev compose …      docker compose med riktig prosjekt (alt annet)
+#
+# Porter: APP_PORT, VITE_PORT og MAILPIT_PORT i .env, bare på 127.0.0.1. ./dev oppsett velger ledige
+# porter som ingen annen app under samme mappe (~/Dev/*/.env) har tatt. Prosjektnavnet kommer fra
+# mappenavnet, så flere apper kan kjøre samtidig.
+#
+# Skal virke med macOS' bash 3.2 og BSD-verktøy. Ingen prod-hemmeligheter: lokal .env lages fra
+# .env.example med lokale verdier og tilfeldige lokale passord.
+
+set -euo pipefail
+
+ROT="$(cd "$(dirname "$0")" && pwd -P)"
+cd "$ROT"
+
+feil()     { printf 'FEIL: %s\n' "$*" >&2; exit 1; }
+advarsel() { printf '    ADVARSEL: %s\n' "$*" >&2; }
+steg()     { printf '==> %s\n' "$*"; }
+info()     { printf '    %s\n' "$*"; }
+
+bruk() { sed -n '3,23p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-1}"; }
+
+# ---------------------------------------------------------------------------
+# Valget i .utvikling: første linje som ikke er tom eller kommentar, «docker» eller «mac».
+les_utvikling() {
+    [ -f .utvikling ] || { printf ''; return 0; }
+    awk '{ sub(/#.*/, ""); gsub(/[[:space:]]/, "") } $0 != "" { print; exit }' .utvikling
+}
+
+krev_docker_valg() {
+    local valg
+    valg="$(les_utvikling)"
+    case "$valg" in
+        docker) ;;
+        mac) feil "denne appen bruker «mac» (.utvikling). Kjør php/composer på Macen, eller endre .utvikling til docker." ;;
+        '') feil "ingen .utvikling i $ROT. Sett valget med «~/Dev/_oppsett/hent-app.sh $(basename "$ROT") --docker», eller skriv «docker» i .utvikling." ;;
+        *) feil "ukjent verdi i .utvikling: «$valg» (docker eller mac)" ;;
+    esac
+}
+
+# finn_docker: setter DOCKER_BIN. Ikke-interaktive skall på Macen har ofte ikke Docker i PATH.
+finn_docker() {
+    local d
+    if command -v docker >/dev/null 2>&1; then DOCKER_BIN="$(command -v docker)"; return 0; fi
+    for d in /usr/local/bin /opt/homebrew/bin "$HOME/.docker/bin" \
+             /Applications/Docker.app/Contents/Resources/bin \
+             "$HOME/.orbstack/bin" "$HOME/.rd/bin"; do
+        if [ -x "$d/docker" ]; then DOCKER_BIN="$d/docker"; return 0; fi
+    done
+    feil "fant ikke docker. Installer Docker Desktop (eller OrbStack), eller legg docker i PATH."
+}
+
+krev_docker() {
+    finn_docker
+    "$DOCKER_BIN" info >/dev/null 2>&1 \
+        || feil "Docker kjører ikke. Start Docker Desktop og prøv igjen."
+    "$DOCKER_BIN" compose version >/dev/null 2>&1 \
+        || feil "docker compose mangler (Docker Desktop har det; ellers installer compose-pluginen)."
+}
+
+# ---------------------------------------------------------------------------
+# Navn. Prosjektet heter som mappen (eurobonus.guide → eurobonus-guide), så to apper aldri deler
+# containere eller volumer. Appnavnet (database, Valkey-bruker og -prefiks) er det tekniske appnavnet
+# fra CLAUDE.md, som på vps1; uten CLAUDE.md første del av mappenavnet (eurobonus.guide → eurobonus).
+MAPPENAVN="$(basename "$ROT")"
+PROSJEKT="$(printf '%s' "$MAPPENAVN" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9_-]/-/g' -e 's/^[^a-z0-9]*//')"
+[ -n "$PROSJEKT" ] || feil "kan ikke lage prosjektnavn av mappenavnet «$MAPPENAVN»"
+
+appnavn() {
+    local navn=""
+    if [ -f CLAUDE.md ]; then
+        # shellcheck disable=SC2016 # backticks er bokstavelige
+        navn="$(sed -n 's/.*Teknisk appnavn: `\([a-z0-9][a-z0-9-]*\)`.*/\1/p' CLAUDE.md | head -n 1)"
+    fi
+    [ -n "$navn" ] || navn="$(printf '%s' "$PROSJEKT" | sed 's/[^a-z0-9].*$//')"
+    printf '%s\n' "${navn:-app}"
+}
+
+# env_verdi NØKKEL: verdien i .env uten anførselstegn (tom hvis den mangler).
+env_verdi() {
+    [ -f .env ] || return 0
+    awk -v k="$1" '
+        index($0, k "=") == 1 {
+            v = substr($0, length(k) + 2)
+            sub(/[[:space:]]+#.*$/, "", v)
+            if (v ~ /^".*"$/ || v ~ /^\047.*\047$/) v = substr(v, 2, length(v) - 2)
+            print v; exit
+        }' .env
+}
+
+# Docker compose med prosjekt, bruker-ID og .env. Compose leser .env i samme mappe for ${…}.
+dc() {
+    COMPOSE_PROJECT_NAME="$PROSJEKT" DEV_UID="$(id -u)" DEV_GID="$(id -g)" \
+        "$DOCKER_BIN" compose "$@"
+}
+
+kjorer() {  # kjorer <tjeneste>: 0 hvis tjenesten kjører
+    [ -n "$(dc ps --status running -q "$1" 2>/dev/null)" ]
+}
+
+TTY_VALG=()
+if [ ! -t 0 ] || [ ! -t 1 ]; then TTY_VALG=(-T); fi
+
+# php <kommando…>: i den kjørende php-containeren, ellers i en engangscontainer (starter mysql/valkey).
+php_i() {
+    if kjorer php; then
+        dc exec "${TTY_VALG[@]+"${TTY_VALG[@]}"}" php "$@"
+    else
+        dc run --rm "${TTY_VALG[@]+"${TTY_VALG[@]}"}" php "$@"
+    fi
+}
+
+npm_i() {
+    dc run --rm --no-deps "${TTY_VALG[@]+"${TTY_VALG[@]}"}" vite npm "$@"
+}
+
+# ---------------------------------------------------------------------------
+# Porter
+PORTNOKLER="APP_PORT VITE_PORT MAILPIT_PORT"
+VALGTE_PORTER=" "
+
+port_opptatt() {
+    local p="$1" f
+    case "$VALGTE_PORTER" in *" $p "*) return 0 ;; esac
+    for f in ../*/.env; do
+        [ -f "$f" ] || continue
+        [ "$f" = "../$MAPPENAVN/.env" ] && continue
+        if grep -Eq "^(APP_PORT|VITE_PORT|MAILPIT_PORT|FORWARD_[A-Z_]*PORT)=\"?$p\"?[[:space:]]*\$" "$f" 2>/dev/null; then
+            return 0
+        fi
+    done
+    # Noe lytter allerede på porten (Herd, en annen stack …)?
+    if command -v nc >/dev/null 2>&1; then
+        nc -z 127.0.0.1 "$p" >/dev/null 2>&1 && return 0
+    elif (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
+# finn_port <start>: setter FUNNET_PORT (ikke $(…), for da glemmes VALGTE_PORTER).
+finn_port() {
+    local p="$1" slutt=$(( $1 + 200 ))
+    while [ "$p" -lt "$slutt" ]; do
+        if ! port_opptatt "$p"; then
+            VALGTE_PORTER="$VALGTE_PORTER$p "
+            FUNNET_PORT="$p"
+            return 0
+        fi
+        p=$(( p + 1 ))
+    done
+    feil "fant ingen ledig port fra $1"
+}
+
+sjekk_porter() {
+    local k v
+    for k in $PORTNOKLER; do
+        v="$(env_verdi "$k")"
+        case "$v" in
+            ''|*[!0-9]*) feil "$k mangler eller er ugyldig i .env. Kjør ./dev oppsett (se README, «Lokalt»)." ;;
+        esac
+        { [ "$v" -ge 1024 ] && [ "$v" -le 65535 ]; } || feil "$k=$v er utenfor 1024–65535"
+    done
+}
+
+vis_adresser() {
+    printf '\n    %-8s %s\n' "App" "http://localhost:$(env_verdi APP_PORT)  (/admin, /up)"
+    printf '    %-8s %s\n' "Vite" "http://localhost:$(env_verdi VITE_PORT)"
+    printf '    %-8s %s\n' "Mailpit" "http://localhost:$(env_verdi MAILPIT_PORT)"
+}
+
+# ---------------------------------------------------------------------------
+# lag_env: .env fra .env.example for Docker. Linjene i overstyringsfila:
+#   +NØKKEL=verdi  sett, og legg til nederst hvis nøkkelen mangler
+#    NØKKEL=verdi  sett bare hvis nøkkelen finnes
+#   -NØKKEL        kommenter ut
+lag_env() {
+    local app db app_port vite_port mail_port dbpass rpass ov tmp
+    [ -f .env.example ] || feil "ingen .env.example"
+    command -v openssl >/dev/null 2>&1 || feil "openssl mangler (trengs for lokale passord)"
+    app="$(appnavn)"
+    db="$(printf '%s' "$app" | tr '-' '_')"
+    finn_port 8100; app_port="$FUNNET_PORT"
+    finn_port 5173; vite_port="$FUNNET_PORT"
+    finn_port 8025; mail_port="$FUNNET_PORT"
+    dbpass="$(openssl rand -hex 16)"
+    rpass="$(openssl rand -hex 16)"
+
+    ov="$(mktemp)"; tmp="$(mktemp)"
+    cat >"$ov" <<EOF
++APP_ENV=local
++APP_DEBUG=true
++APP_URL=http://localhost:$app_port
+LOG_STACK=single
+LOG_LEVEL=debug
++DB_CONNECTION=mysql
++DB_HOST=mysql
++DB_PORT=3306
++DB_DATABASE=$db
++DB_USERNAME=$db
++DB_PASSWORD=$dbpass
+-DB_URL
++REDIS_CLIENT=phpredis
++REDIS_HOST=/run/valkey/valkey.sock
++REDIS_PORT=0
++REDIS_USERNAME=$app
++REDIS_PASSWORD=$rpass
++REDIS_PREFIX=$app:
+SESSION_DRIVER=redis
+SESSION_SECURE_COOKIE=false
++SESSION_COOKIE=${db}_session
+CACHE_STORE=redis
++QUEUE_CONNECTION=sync
++MAIL_MAILER=smtp
++MAIL_HOST=mailpit
++MAIL_PORT=1025
+SMTP2GO_API_KEY=
+ADMIN_KNOWN_DEVICE_TOKEN=
+INDEXNOW_KEY=
++COMPOSE_PROJECT_NAME=$PROSJEKT
++APP_PORT=$app_port
++VITE_PORT=$vite_port
++MAILPIT_PORT=$mail_port
+EOF
+    awk '
+        NR == FNR {
+            linje = $0
+            if (linje == "") next
+            if (substr(linje, 1, 1) == "-") { av[substr(linje, 2)] = 1; next }
+            pluss = (substr(linje, 1, 1) == "+")
+            if (pluss) linje = substr(linje, 2)
+            k = linje; sub(/=.*/, "", k)
+            v = linje; sub(/^[^=]*=/, "", v)
+            verdi[k] = v
+            if (pluss) { n++; rekkef[n] = k }
+            next
+        }
+        /^[A-Za-z_][A-Za-z0-9_]*=/ {
+            k = $0; sub(/=.*/, "", k)
+            if (k in verdi) { print k "=" verdi[k]; satt[k] = 1; next }
+            if (k in av)    { print "# " $0 "    # av lokalt (./dev)"; next }
+        }
+        { print }
+        END {
+            hode = 0
+            for (i = 1; i <= n; i++) if (!(rekkef[i] in satt)) {
+                if (!hode) { print ""; print "# Lokalt Docker-miljø (./dev oppsett). Portene er bare på 127.0.0.1."; hode = 1 }
+                print rekkef[i] "=" verdi[rekkef[i]]
+            }
+        }
+    ' "$ov" .env.example >"$tmp"
+    rm -f "$ov"
+    ( umask 077; cp "$tmp" .env )
+    rm -f "$tmp"
+    chmod 600 .env
+    info "laget fra .env.example: MySQL «$db», Valkey-bruker «$app» med prefiks «$app:», Mailpit, lokale passord"
+    info "porter: app $app_port, Vite $vite_port, Mailpit $mail_port"
+}
+
+# ---------------------------------------------------------------------------
+kommando_oppsett() {
+    local med_npm=1 med_tester=1 status=0 logg sammendrag
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --uten-npm)    med_npm=0 ;;
+            --uten-tester) med_tester=0 ;;
+            *) feil "ukjent valg til oppsett: $1" ;;
+        esac
+        shift
+    done
+    TTY_VALG=(-T)   # ikke interaktivt, og testutskriften går gjennom tee
+
+    steg ".env"
+    if [ -f .env ]; then
+        if [ -z "$(env_verdi APP_PORT)" ] || [ "$(env_verdi DB_CONNECTION)" != mysql ]; then
+            feil ".env finnes, men er ikke laget for Docker (mangler APP_PORT eller DB_CONNECTION=mysql). Flytt den bort (mv .env .env.mac) og kjør ./dev oppsett på nytt."
+        fi
+        info ".env finnes og røres ikke"
+    else
+        lag_env
+    fi
+    sjekk_porter
+    mkdir -p "Claude outputs"
+
+    steg "Image og tjenester (prosjekt $PROSJEKT)"
+    dc build php
+    dc up -d --wait mysql valkey mailpit php nginx
+
+    steg "composer install"
+    php_i composer install --no-interaction --no-progress || status=1
+
+    if [ "$status" = 0 ] && [ "$med_npm" = 1 ] && [ -f package.json ]; then
+        steg "npm ci og bygg (node-containeren)"
+        { npm_i ci && npm_i run build; } || status=1
+    fi
+
+    if [ "$status" = 0 ]; then
+        steg "Nøkkel og migrering"
+        if [ -z "$(env_verdi APP_KEY)" ]; then
+            php_i php artisan key:generate --no-interaction --ansi || status=1
+        fi
+        php_i php artisan migrate --no-interaction --ansi || status=1
+    fi
+
+    if [ "$status" = 0 ] && [ "$med_tester" = 1 ]; then
+        steg "Tester mot MySQL"
+        logg="Claude outputs/dev-tester.log"
+        if kommando_test --no-ansi 2>&1 | tee "$logg"; then :; else status=1; fi
+        sammendrag="$(grep -E '^[[:space:]]*Tests:' "$logg" | tail -n 1 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]][[:space:]]*/ /g' || true)"
+        info "${sammendrag:-ingen testsammendrag} (logg: $logg)"
+    fi
+
+    if [ "$status" = 0 ] && [ "$med_npm" = 1 ] && [ -f package.json ]; then
+        steg "Vite med HMR"
+        dc up -d vite
+    fi
+
+    if [ "$status" = 0 ]; then
+        printf '\nFerdig. Admin-bruker: ./dev artisan make:filament-user\n'
+        vis_adresser
+    else
+        printf '\nFerdig med feil (se over).\n' >&2
+    fi
+    return "$status"
+}
+
+kommando_up() {
+    sjekk_porter
+    if [ -f package.json ] && [ ! -d node_modules ]; then
+        steg "npm ci (node_modules mangler)"
+        npm_i ci
+    fi
+    dc up -d --wait "$@"
+    vis_adresser
+}
+
+kommando_down() {
+    dc down "$@"
+    # laravel-vite-plugin fjerner public/hot når Vite stopper pent; ta den uansett, ellers peker
+    # siden mot en Vite-server som ikke finnes.
+    rm -f public/hot
+}
+
+# Testene kjører mot <DB_DATABASE>_test (laget av docker/mysql/initdb), aldri mot utviklingsdatabasen.
+# Miljøvariablene under har forrang foran <env> i phpunit.xml, som ellers velger SQLite i minnet.
+kommando_test() {
+    local db
+    db="$(env_verdi DB_DATABASE)"
+    [ -n "$db" ] || feil "DB_DATABASE mangler i .env"
+    if [ -f bootstrap/cache/config.php ]; then
+        advarsel "config er cachet; tømmer den så testmiljøet gjelder"
+        php_i php artisan config:clear --no-interaction >/dev/null
+    fi
+    local env_valg=(-e DB_CONNECTION=mysql -e DB_HOST=mysql -e DB_PORT=3306 -e "DB_DATABASE=${db}_test" -e DB_URL=)
+    if kjorer php; then
+        dc exec "${TTY_VALG[@]+"${TTY_VALG[@]}"}" "${env_valg[@]}" php php artisan test "$@"
+    else
+        dc run --rm "${TTY_VALG[@]+"${TTY_VALG[@]}"}" "${env_valg[@]}" php php artisan test "$@"
+    fi
+}
+
+kommando_mysql() {
+    local db bruker pass
+    db="$(env_verdi DB_DATABASE)"; bruker="$(env_verdi DB_USERNAME)"; pass="$(env_verdi DB_PASSWORD)"
+    dc exec "${TTY_VALG[@]+"${TTY_VALG[@]}"}" -e "MYSQL_PWD=$pass" mysql mysql -u"$bruker" "$db" "$@"
+}
+
+# ---------------------------------------------------------------------------
+[ "$#" -gt 0 ] || bruk 1
+KOMMANDO="$1"; shift
+case "$KOMMANDO" in
+    -h|--help|help) bruk 0 ;;
+esac
+
+krev_docker_valg
+[ -f compose.yaml ] || feil "compose.yaml mangler i $ROT"
+krev_docker
+
+case "$KOMMANDO" in
+    oppsett)  kommando_oppsett "$@" ;;
+    up)       kommando_up "$@" ;;
+    down)     kommando_down "$@" ;;
+    artisan)  php_i php artisan "$@" ;;
+    composer) php_i composer "$@" ;;
+    npm)
+        if [ "$#" -ge 2 ] && [ "$1" = run ] && [ "$2" = dev ]; then
+            feil "Vite-serveren er tjenesten «vite»: ./dev up (logg: ./dev logs vite)"
+        fi
+        npm_i "$@" ;;
+    test)     kommando_test "$@" ;;
+    mysql)    kommando_mysql "$@" ;;
+    sh|shell) php_i bash "$@" ;;
+    logs)     dc logs -f --tail=100 "$@" ;;
+    ps)       dc ps "$@" ;;
+    porter)   sjekk_porter; vis_adresser ;;
+    build)    dc build --pull "$@" ;;
+    compose)  dc "$@" ;;
+    *)        feil "ukjent kommando: $KOMMANDO (./dev --help)" ;;
+esac

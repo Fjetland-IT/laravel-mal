@@ -20,6 +20,7 @@ Mal for nye Laravel-apper på vps1: Laravel 13, Filament 5, Vite og PHP 8.5
 | Dependabot for Actions-pinnene, Composer og npm | `.github/dependabot.yml` |
 | Actions-policy per app-repo | `scripts/sett-actions-policy.sh` |
 | Mal for CLAUDE.md | `CLAUDE.md.tpl` |
+| Lokalt utviklingsmiljø i Docker, valgfritt per app (`.utvikling`) | `compose.yaml`, `docker/`, `dev` |
 
 ## Nytt app-repo fra malen
 
@@ -28,7 +29,9 @@ Normalt gjør veiviseren i dash dette (fase 4, steg 5). For hånd:
 1. Lag repoet på `akselfoley` fra malen (privat), med reponavn = hoveddomenet (se planens «Apper og domener»).
 2. Sett Actions-policyen **før** første kjøring: `scripts/sett-actions-policy.sh <repo>`.
 3. Render `CLAUDE.md.tpl` til `CLAUDE.md`, slett `.tpl`-fila, og sett `name`/`description` i
-   `composer.json`. Plassholdere:
+   `composer.json`. `name` inngår i `content-hash` i `composer.lock`, så kjør `composer update --lock`
+   (eller `./dev composer update --lock`) etterpå og commit lock-fila; ellers advarer `composer install`
+   om at lock-fila er utdatert. Plassholdere:
 
    | Plassholder | Eksempel |
    |---|---|
@@ -75,11 +78,23 @@ command="/srv/<app>/pull-deploy.sh",restrict ssh-ed25519 AAAA… actions-<app>
 
 Serveren henter `deploy` med en egen deploy-nøkkel (bare lesing) på repoet.
 
-## Lokalt
+## Lokalt: `docker` eller `mac`
 
-`~/Dev/_oppsett/hent-app.sh <repo>` kloner og setter opp `.env` (SQLite, fil-cache, mail til logg),
-`composer install`, `npm ci` og bygg, nøkkel, migrering og tester. Node er ikke installert på Macen;
-npm kjøres i Docker via `~/Dev/_oppsett/npm.sh` (Docker Desktop må kjøre). For hånd:
+Hver app velger lokalt utviklingsmiljø i fila `.utvikling` i repoet, med ett ord: `docker` eller `mac`.
+Mangler fila, gjelder `mac`. Malen har ingen `.utvikling`; valget settes når appen hentes første gang:
+
+```sh
+~/Dev/_oppsett/hent-app.sh <repo> --docker    # eller --mac
+```
+
+`hent-app.sh` skriver fila og spør før den committer den. Alle maskiner og Claude-økter ser da samme valg.
+Docker-filene ligger alltid i repoet, men brukes bare med `docker`.
+
+### `mac`
+
+PHP 8.5 og Composer på Macen. `hent-app.sh` lager `.env` (SQLite, fil-cache og -sesjoner, mail til logg),
+og kjører `composer install`, `npm ci` og bygg, nøkkel, migrering og tester. Node er ikke installert på
+Macen; npm kjøres i Docker via `~/Dev/_oppsett/npm.sh` (Docker Desktop må kjøre). For hånd:
 
 ```sh
 composer install
@@ -90,6 +105,54 @@ php artisan migrate
 php artisan test
 php artisan make:filament-user
 ```
+
+### `docker`
+
+Containere som ligner vps1, styrt med `./dev` (Docker Desktop må kjøre):
+
+| Tjeneste | Bilde | Som på vps1 |
+|---|---|---|
+| `php` | `docker/php/Dockerfile` (`php:8.5-fpm` + Composer) | PHP 8.5-FPM med utvidelsene fra `php8.5-*`-pakkene, OPcache-innstillingene og `expose_php = Off` |
+| `nginx` | `nginx:stable-alpine` | Samme vhost-regler: bare `/index.php` til PHP, punktfiler avvist, samme sikkerhetshoder |
+| `mysql` | `mysql:8.4` | MySQL 8.4, `local_infile = 0`, `skip-name-resolve`; database og bruker heter som appen |
+| `valkey` | `valkey/valkey:9.0` | Bare unix-socket (`/run/valkey/valkey.sock`, delt med `php`), `default` av, ACL-bruker med samme regel som på vps1 (`~<app>:*`, ingen `FLUSHDB`/`KEYS`/`SCAN`) |
+| `vite` | `node:24` | Samme Node-major som Actions; `npm run dev` med HMR |
+| `mailpit` | `axllent/mailpit` | Fanger all e-post fra appen (i prod: SMTP2GO) |
+
+```sh
+./dev oppsett          # første gang: .env, porter, image, composer, npm, nøkkel, migrering, tester, start
+./dev up               # start (viser adressene)
+./dev down             # stopp; ./dev down -v sletter også database, Valkey-data og cache
+./dev artisan migrate
+./dev composer require …
+./dev npm ci
+./dev test             # mot MySQL (<DB_DATABASE>_test), ikke SQLite
+./dev mysql | sh | logs [tjeneste] | ps | porter | build | compose …
+./dev artisan make:filament-user
+```
+
+- **`.env`:** `./dev oppsett` lager den fra `.env.example` når den mangler. MySQL og Valkey på socket
+  beholdes som i prod, med appnavnet fra CLAUDE.md («Teknisk appnavn») som database, bruker og
+  Valkey-prefiks, og tilfeldige lokale passord. `APP_URL=http://localhost:<APP_PORT>`, `MAIL_MAILER=smtp`
+  mot Mailpit, `QUEUE_CONNECTION=sync` (ingen køarbeider lokalt), og egen `SESSION_COOKIE` per app, siden
+  alle appene deler `localhost`. En `.env` fra `mac` brukes ikke: flytt den bort (`mv .env .env.mac`).
+- **Porter og navn:** prosjektnavnet er mappenavnet (`eurobonus.guide` → `eurobonus-guide`), så containere
+  og volumer aldri deles mellom apper. `APP_PORT` (fra 8100), `VITE_PORT` (fra 5173) og `MAILPIT_PORT` (fra
+  8025) velges ledige og ikke brukt av andre apper i `~/Dev/*/.env`, og skrives i `.env`. Alt publiseres bare
+  på 127.0.0.1; MySQL og Valkey publiseres ikke. Egne tillegg legges i `compose.override.yaml`
+  (gitignorert), f.eks. `services: { mysql: { ports: ["127.0.0.1:33061:3306"] } }`.
+- **Tester:** `./dev test` setter `DB_CONNECTION=mysql` og `DB_DATABASE=<DB_DATABASE>_test`, som går foran
+  `<env>` i `phpunit.xml`. Testdatabasen lages av `docker/mysql/initdb/` første gang databasevolumet lages.
+  Actions tester fortsatt med SQLite.
+- **Bruker-ID:** `php` og `vite` kjører med din UID/GID (`./dev` setter `DEV_UID`/`DEV_GID`), så filer i
+  repoet ikke blir eid av root på Linux.
+- **Vite:** `./dev up` starter `vite`, som skriver `public/hot`; `./dev down` fjerner fila. Uten Vite
+  brukes `public/build` (`./dev npm run build`).
+- **Ingen hemmeligheter:** compose-fila og bildet har ingen; alt kommer fra den lokale `.env`.
+- **Deploy:** uendret. Workflowen fjerner `compose.yaml`, `docker/`, `dev` og `.utvikling` før grenen
+  `deploy` bygges, og `pull-deploy.sh` vet ingenting om Docker.
+- **Bytte valg:** endre `.utvikling` i en egen commit, flytt `.env` bort og kjør `hent-app.sh <repo>` på
+  nytt. `./dev down -v` rydder Docker-volumene når appen går tilbake til `mac`.
 
 ## Vedlikehold av malen
 

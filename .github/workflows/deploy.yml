@@ -103,7 +103,8 @@ jobs:
         run: |
           # Det som ikke skal til serveren
           rm -rf node_modules tests .github scripts _ignore _to_delete "Claude outputs" \
-                 CLAUDE.md.tpl phpunit.xml .phpunit.result.cache ./*.md
+                 CLAUDE.md.tpl phpunit.xml .phpunit.result.cache ./*.md \
+                 compose.yaml compose.override.yaml docker dev .utvikling
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

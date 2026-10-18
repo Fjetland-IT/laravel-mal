@@ -31,14 +31,24 @@
 - Status, pakker og varsler: {{DASH_URL}}
 
 ## Lokalt (Macen)
-- `~/Dev/{{REPO_NAVN}}`, satt opp med `~/Dev/_oppsett/hent-app.sh {{REPO_NAVN}}`. Lokal `.env` bruker
-  SQLite, fil-cache og mail til logg.
+- `~/Dev/{{REPO_NAVN}}`, satt opp med `~/Dev/_oppsett/hent-app.sh {{REPO_NAVN}}`.
+- **Utviklingsmiljøet velges per app i `.utvikling`** i repoet: `docker` eller `mac`. Mangler fila,
+  gjelder `mac`. Les fila før du kjører noe lokalt. Valget settes med `hent-app.sh {{REPO_NAVN}} --docker`
+  (eller `--mac`) og committes som en egen endring.
+- **`docker`:** alt kjører i containere som ligner vps1 (PHP 8.5-FPM + nginx, MySQL 8.4, Valkey på
+  socket med samme ACL som på vps1, Node 24 for Vite med HMR, Mailpit for e-post). Bruk `./dev`:
+  `./dev up`, `./dev down`, `./dev artisan …`, `./dev composer …`, `./dev npm …`, `./dev test` (mot MySQL,
+  databasen `<DB_DATABASE>_test`), `./dev logs`, `./dev porter`. Adressene står i `.env` (`APP_PORT`,
+  `VITE_PORT`, `MAILPIT_PORT`) og er bare på 127.0.0.1. Kjør ikke `php`, `composer` eller `npm.sh` på Macen
+  for denne appen.
+- **`mac`:** PHP 8.5 og Composer på Macen; lokal `.env` bruker SQLite, fil-cache og mail til logg.
+  Tester: `php artisan test`. Node er ikke installert på Macen: npm kjøres i Docker (`node:24`, samme major
+  som Actions) med `~/Dev/_oppsett/npm.sh`, f.eks. `npm.sh ci`, `npm.sh run build` og `npm.sh run dev`
+  (Vite på `localhost:5173`). `node_modules` har Linux-binærer.
+- Docker og Composer kjører på Macen. Packagist og Docker Hub er blokkert fra Claude-skyen, og sky-VM-en
+  har ikke Docker: gi Aksel kommandoene (`./dev …`) i stedet for å kjøre dem der.
+- Actions tester fortsatt med SQLite (`phpunit.xml`); `./dev test` kjører de samme testene mot MySQL.
 - Utkast, forhåndsvisninger, logger og engangsskript legges i `Claude outputs/` (gitignorert).
-- Tester: `php artisan test`. Composer kjøres i Terminal på Macen (Packagist er blokkert fra
-  Claude-skyen).
-- Node er ikke installert på Macen. npm kjøres i Docker (`node:24`, samme major som Actions) med
-  `~/Dev/_oppsett/npm.sh`, f.eks. `npm.sh ci`, `npm.sh run build` og `npm.sh run dev` (Vite på
-  `localhost:5173`). Docker Desktop må kjøre, og `node_modules` har Linux-binærer.
 
 ## Regler
 - Norsk i UI, kommentarer og commit-meldinger.
