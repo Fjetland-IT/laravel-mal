@@ -129,7 +129,13 @@ Containere som ligner vps1, styrt med `./dev` (Docker Desktop må kjøre):
 ./dev test             # mot MySQL (<DB_DATABASE>_test), ikke SQLite
 ./dev mysql | sh | logs [tjeneste] | ps | porter | build | compose …
 ./dev artisan make:filament-user
+./dev prosjektprompt   # prompt til claude.ai-prosjektet for appen (trenger ikke Docker)
 ```
+
+- **Prosjektprompt:** `./dev oppsett` lager til slutt `Claude outputs/prosjektprompt.md` fra
+  `docker/prosjektprompt.md.tpl`, med appens navn, repo, porter, Docker-oppsettet, arbeidsmåten med Macen og
+  «Produksjon»-delen fra CLAUDE.md. Den limes inn som instruksjoner i claude.ai-prosjektet for appen. Kjør
+  `./dev prosjektprompt` på nytt når porter, CLAUDE.md eller oppsettet endres.
 
 - **`.env`:** `./dev oppsett` lager den fra `.env.example` når den mangler. MySQL og Valkey på socket
   beholdes som i prod, med appnavnet fra CLAUDE.md («Teknisk appnavn») som database, bruker og

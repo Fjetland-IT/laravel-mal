@@ -40,7 +40,8 @@
   `./dev up`, `./dev down`, `./dev artisan …`, `./dev composer …`, `./dev npm …`, `./dev test` (mot MySQL,
   databasen `<DB_DATABASE>_test`), `./dev logs`, `./dev porter`. Adressene står i `.env` (`APP_PORT`,
   `VITE_PORT`, `MAILPIT_PORT`) og er bare på 127.0.0.1. Kjør ikke `php`, `composer` eller `npm.sh` på Macen
-  for denne appen.
+  for denne appen. `./dev prosjektprompt` lager prompten til claude.ai-prosjektet for appen
+  (`Claude outputs/prosjektprompt.md`).
 - **`mac`:** PHP 8.5 og Composer på Macen; lokal `.env` bruker SQLite, fil-cache og mail til logg.
   Tester: `php artisan test`. Node er ikke installert på Macen: npm kjøres i Docker (`node:24`, samme major
   som Actions) med `~/Dev/_oppsett/npm.sh`, f.eks. `npm.sh ci`, `npm.sh run build` og `npm.sh run dev`

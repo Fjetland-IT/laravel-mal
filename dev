@@ -16,6 +16,8 @@
 #   ./dev mysql          mysql-klient mot appens database
 #   ./dev sh             skall i php-containeren
 #   ./dev logs [tjeneste], ./dev ps, ./dev porter, ./dev build
+#   ./dev prosjektprompt prompt til claude.ai-prosjektet for appen (Claude outputs/prosjektprompt.md),
+#                        med appens navn, repo og porter; lages også av ./dev oppsett. Trenger ikke Docker.
 #   ./dev compose …      docker compose med riktig prosjekt (alt annet)
 #
 # Porter: APP_PORT, VITE_PORT og MAILPIT_PORT i .env, bare på 127.0.0.1. ./dev oppsett velger ledige
@@ -35,7 +37,7 @@ advarsel() { printf '    ADVARSEL: %s\n' "$*" >&2; }
 steg()     { printf '==> %s\n' "$*"; }
 info()     { printf '    %s\n' "$*"; }
 
-bruk() { sed -n '3,23p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-1}"; }
+bruk() { sed -n '3,25p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-1}"; }
 
 # ---------------------------------------------------------------------------
 # Valget i .utvikling: første linje som ikke er tom eller kommentar, «docker» eller «mac».
@@ -286,6 +288,62 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
+# kommando_prosjektprompt: docker/prosjektprompt.md.tpl med appens verdier → Claude outputs/prosjektprompt.md.
+# «Produksjon»-delen hentes fra CLAUDE.md. Fila har ingen hemmeligheter (navn, repo og porter).
+PROMPTFIL="Claude outputs/prosjektprompt.md"
+kommando_prosjektprompt() {
+    local mal="docker/prosjektprompt.md.tpl" hoved url repo app db prod tmp
+    [ -f "$mal" ] || feil "$mal mangler (eldre mal?)"
+    sjekk_porter
+    hoved=""
+    if [ -f CLAUDE.md ]; then
+        hoved="$(sed -n 's/.*Hoveddomene: \*\*\([^*][^*]*\)\*\*.*/\1/p' CLAUDE.md | head -n 1)"
+    fi
+    [ -n "$hoved" ] || hoved="$MAPPENAVN"
+    url="$(git config --get remote.origin.url 2>/dev/null || true)"
+    repo="$(printf '%s\n' "$url" | sed -n -e 's#^git@github\.com:##p' -e 's#^https://github\.com/##p' | sed 's#\.git$##')"
+    [ -n "$repo" ] || repo="akselfoley/$MAPPENAVN"
+    app="$(appnavn)"
+    db="$(env_verdi DB_DATABASE)"
+    [ -n "$db" ] || db="$(printf '%s' "$app" | tr '-' '_')"
+
+    prod="$(mktemp)"; tmp="$(mktemp)"
+    if [ -f CLAUDE.md ]; then
+        awk '/^## Produksjon/ { f = 1; next } /^## / { f = 0 } f' CLAUDE.md \
+            | awk 'NF { n++ } n' | awk '{ l[NR] = $0 } END { e = NR; while (e > 0 && l[e] ~ /^[[:space:]]*$/) e--; for (i = 1; i <= e; i++) print l[i] }' >"$prod"
+    fi
+    if [ ! -s "$prod" ]; then
+        printf '%s\n' "- CLAUDE.md har ingen «Produksjon»-del ennå (CLAUDE.md.tpl er ikke rendret). Appen er ikke satt opp på vps1." >"$prod"
+    fi
+
+    P_HOVEDDOMENE="$hoved" P_MAPPE="$MAPPENAVN" P_REPO="$repo" P_APP="$app" P_DB="$db" \
+    P_PROSJEKT="$PROSJEKT" P_APP_PORT="$(env_verdi APP_PORT)" P_VITE_PORT="$(env_verdi VITE_PORT)" \
+    P_MAILPIT_PORT="$(env_verdi MAILPIT_PORT)" P_DATO="$(date '+%Y-%m-%d')" P_PRODFIL="$prod" \
+    awk '
+        function erstatt(t, n, v,    i, r) {
+            r = ""
+            while ((i = index(t, n)) > 0) { r = r substr(t, 1, i - 1) v; t = substr(t, i + length(n)) }
+            return r t
+        }
+        $0 == "{{PRODUKSJON}}" {
+            while ((getline l < ENVIRON["P_PRODFIL"]) > 0) print l
+            next
+        }
+        {
+            split("HOVEDDOMENE MAPPE REPO APP DB PROSJEKT APP_PORT VITE_PORT MAILPIT_PORT DATO", k, " ")
+            for (j = 1; j <= 10; j++) $0 = erstatt($0, "{{" k[j] "}}", ENVIRON["P_" k[j]])
+            print
+        }' "$mal" >"$tmp"
+    rm -f "$prod"
+    if grep -q '{{[A-Z_]*}}' "$tmp"; then
+        rm -f "$tmp"; feil "prosjektprompten har plassholdere som ikke ble fylt ut"
+    fi
+    mkdir -p "Claude outputs"
+    mv -f "$tmp" "$PROMPTFIL"
+    info "prosjektprompt: $ROT/$PROMPTFIL"
+}
+
+# ---------------------------------------------------------------------------
 kommando_oppsett() {
     local med_npm=1 med_tester=1 status=0 logg sammendrag
     while [ "$#" -gt 0 ]; do
@@ -344,7 +402,10 @@ kommando_oppsett() {
     fi
 
     if [ "$status" = 0 ]; then
+        steg "Prosjektprompt"
+        kommando_prosjektprompt || advarsel "prosjektprompten ble ikke laget (./dev prosjektprompt)"
         printf '\nFerdig. Admin-bruker: ./dev artisan make:filament-user\n'
+        printf 'Lim «%s» inn i claude.ai-prosjektet for appen.\n' "$PROMPTFIL"
         vis_adresser
     else
         printf '\nFerdig med feil (se over).\n' >&2
@@ -417,6 +478,10 @@ case "$KOMMANDO" in
 esac
 
 krev_docker_valg
+if [ "$KOMMANDO" = prosjektprompt ]; then
+    kommando_prosjektprompt
+    exit 0
+fi
 [ -f compose.yaml ] || feil "compose.yaml mangler i $ROT"
 krev_docker
 
