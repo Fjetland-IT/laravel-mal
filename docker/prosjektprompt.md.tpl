@@ -15,7 +15,8 @@ Svar og skriv kommentarer, commit-meldinger og UI-tekst på norsk (bokmål). Skr
 - **Stakk:** Laravel 13, Filament 5 (adminpanel på `/admin` med tofaktor), Livewire, Vite og Tailwind 4,
   PHP 8.5. `config.platform.php` i `composer.json` er låst til 8.5.0 og skal ikke endres for å få inn en
   pakke.
-- **Fra malen:** MFA-tilpasninger i `app/Filament/Auth/`, innloggingsvarsel med «kjent enhet»
+- **Fra malen:** MFA i `app/Filament/Auth/` med flere autentiseringsapper per bruker (`mfa_apper`,
+  `mfa:nullstill` som nødvei), innloggingsvarsel med «kjent enhet»
   (`app/Listeners/SendBackendLoginAlert.php`, `/admin/kjent-enhet`), e-post via SMTP2GO-API-et
   (`app/Mail/Transport/Smtp2goTransport.php`), `/up`, `/sitemap.xml` og IndexNow
   (`app/Support/IndexNow.php`, `indexnow:send` hver time), og tittelkutting for SEO (`app/Support/Seo.php`).
@@ -92,7 +93,7 @@ eller `npm` direkte på Macen for denne appen.
   via dash eller SSH.
 - Ingen push, deploy eller endringer på vps1, i `Fjetland-IT/vps` eller i `dash.fjetland.it` herfra.
 - Ved Filament-oppgradering: sjekk `app/Filament/Auth/` mot ny innebygd oppførsel
-  (`tests/Feature/AdminMfaAutoSubmitTest.php`).
+  (`tests/Feature/AdminMfaAutoSubmitTest.php`, `tests/Feature/MfaApperTest.php`).
 - Testene skal være grønne både med `./dev test` (MySQL) og i Actions (SQLite).
 - Nye tredjeparts-actions legger Aksel til i Actions-policyen. Foreslå dem, men ikke legg dem inn uten
   avtale.

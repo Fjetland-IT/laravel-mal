@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use Database\Factories\UserFactory;
-use Filament\Auth\MultiFactor\App\Concerns\InteractsWithAppAuthentication;
 use Filament\Auth\MultiFactor\App\Concerns\InteractsWithAppAuthenticationRecovery;
 use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthentication;
 use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthenticationRecovery;
@@ -12,19 +11,24 @@ use Filament\Panel;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use LogicException;
+use SensitiveParameter;
 
+// app_authentication_secret er Filaments gamle enkelthemmelighet. Den skjules til kolonnen er
+// fjernet (O15, database/migrations/senere/).
 #[Fillable(['name', 'email', 'password'])]
-#[Hidden(['password', 'remember_token'])]
+#[Hidden(['password', 'remember_token', 'app_authentication_secret'])]
 class User extends Authenticatable implements FilamentUser, HasAppAuthentication, HasAppAuthenticationRecovery
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
-    // Tofaktor (TOTP) for admin-panelet. Traitene håndterer kryptert lagring
-    // av app_authentication_secret og -recovery_codes, og skjuler dem i output.
-    use InteractsWithAppAuthentication, InteractsWithAppAuthenticationRecovery;
+    // Tofaktor (TOTP) for admin-panelet: appene ligger i mfa_apper (MfaApp, O15). Traiten under
+    // håndterer de krypterte gjenopprettingskodene på users, som før.
+    use InteractsWithAppAuthenticationRecovery;
 
     /**
      * Filament nekter alle i ikke-lokale miljøer uten denne (403 på /admin).
@@ -34,6 +38,16 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
     public function canAccessPanel(Panel $panel): bool
     {
         return true;
+    }
+
+    /**
+     * Brukerens autentiseringsapper, eldste først.
+     *
+     * @return HasMany<MfaApp, $this>
+     */
+    public function mfaApper(): HasMany
+    {
+        return $this->hasMany(MfaApp::class)->orderBy('id');
     }
 
     /**
@@ -51,5 +65,20 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
     public function getAppAuthenticationHolderName(): string
     {
         return $this->email;
+    }
+
+    /**
+     * Filaments enkelthemmelighet brukes ikke lenger (App\Filament\Auth\MfaApperAuthentication leser
+     * mfa_apper). Kaster, så en kodevei som fortsatt leser den, feiler synlig i stedet for å godta
+     * bare én app.
+     */
+    public function getAppAuthenticationSecret(): ?string
+    {
+        throw new LogicException('Hemmelighetene ligger i mfa_apper. Bruk MfaApperAuthentication.');
+    }
+
+    public function saveAppAuthenticationSecret(#[SensitiveParameter] ?string $secret): void
+    {
+        throw new LogicException('Hemmelighetene ligger i mfa_apper. Bruk MfaApperAuthentication.');
     }
 }

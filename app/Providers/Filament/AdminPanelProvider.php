@@ -2,8 +2,8 @@
 
 namespace App\Providers\Filament;
 
-use App\Filament\Auth\AutoSubmittingAppAuthentication;
 use App\Filament\Auth\Login;
+use App\Filament\Auth\MfaApperAuthentication;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -29,14 +29,14 @@ class AdminPanelProvider extends PanelProvider
             ->default()
             ->id('admin')
             ->path('admin')
-            // Egen Login-side og MFA-leverandør: fokus på kodefeltet, og avvist
-            // kode tømmes (app/Filament/Auth).
+            // Egen Login-side og MFA-leverandør: flere autentiseringsapper per bruker
+            // (mfa_apper, O15), fokus på kodefeltet, og avvist kode tømmes (app/Filament/Auth).
             ->login(Login::class)
             ->profile(isSimple: false)
             // Tofaktor: påkrevd i produksjon, av lokalt (config/admin.php).
             ->multiFactorAuthentication(
                 [
-                    AutoSubmittingAppAuthentication::make()
+                    MfaApperAuthentication::make()
                         ->recoverable()
                         ->regenerableRecoveryCodes()
                         ->brandName($brand),

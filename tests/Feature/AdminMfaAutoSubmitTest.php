@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Filament\Auth\AutoSubmittingAppAuthentication;
 use App\Filament\Auth\Login;
+use App\Filament\Auth\MfaApperAuthentication;
 use App\Models\User;
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Artisan;
@@ -26,7 +27,9 @@ class AdminMfaAutoSubmitTest extends TestCase
 {
     private User $user;
 
-    private AutoSubmittingAppAuthentication $provider;
+    private MfaApperAuthentication $provider;
+
+    private string $secret;
 
     protected function setUp(): void
     {
@@ -36,7 +39,10 @@ class AdminMfaAutoSubmitTest extends TestCase
         // laget fra malen er ikke nødvendigvis sqlite-kompatible. sqlite :memory: er
         // ferskt per test.
         Artisan::call('migrate', [
-            '--path' => glob(database_path('migrations/*users*.php')),
+            '--path' => [
+                ...glob(database_path('migrations/*users*.php')),
+                ...glob(database_path('migrations/*mfa_apper*.php')),
+            ],
             '--realpath' => true,
         ]);
 
@@ -47,11 +53,11 @@ class AdminMfaAutoSubmitTest extends TestCase
         $this->provider = collect(Filament::getMultiFactorAuthenticationProviders())
             ->first(fn ($provider) => $provider instanceof AutoSubmittingAppAuthentication);
 
-        $this->assertNotNull($this->provider, 'Panelet skal bruke AutoSubmittingAppAuthentication.');
+        $this->assertInstanceOf(MfaApperAuthentication::class, $this->provider, 'Panelet skal bruke MfaApperAuthentication (som arver fokusgrepene).');
 
-        $this->user = User::factory()->create([
-            'app_authentication_secret' => $this->provider->generateSecret(),
-        ]);
+        $this->secret = $this->provider->generateSecret();
+        $this->user = User::factory()->create();
+        $this->user->mfaApper()->create(['navn' => 'Telefon', 'hemmelighet' => $this->secret]);
     }
 
     /** Logger inn med e-post og passord, så vi står i tofaktor-utfordringen. */
@@ -70,7 +76,7 @@ class AdminMfaAutoSubmitTest extends TestCase
     /** En sekssifret kode som IKKE er gyldig akkurat nå (heller ikke i vinduet rundt). */
     private function invalidCode(): string
     {
-        $secret = $this->provider->getSecret($this->user);
+        $secret = $this->secret;
 
         foreach (['000000', '111111', '222222', '333333'] as $candidate) {
             if (! $this->provider->verifyCode($candidate, $secret)) {
@@ -128,7 +134,7 @@ class AdminMfaAutoSubmitTest extends TestCase
     public function test_riktig_kode_logger_inn(): void
     {
         $this->startChallenge()
-            ->set('data.multiFactor.app.code', $this->provider->getCurrentCode($this->user))
+            ->set('data.multiFactor.app.code', $this->provider->getCurrentCode($this->user, $this->secret))
             ->call('authenticate')
             ->assertHasNoErrors();
 

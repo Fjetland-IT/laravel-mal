@@ -28,8 +28,18 @@ class AutoSubmittingAppAuthentication extends AppAuthentication
 {
     public function getChallengeFormComponents(Authenticatable $user): array
     {
-        $components = parent::getChallengeFormComponents($user);
+        return $this->medFokus(parent::getChallengeFormComponents($user));
+    }
 
+    /**
+     * Legger fokusskriptet på kodefeltet. Brukes også av MfaApperAuthentication, som bygger
+     * utfordringen selv (O15).
+     *
+     * @param  array<mixed>  $components
+     * @return array<mixed>
+     */
+    protected function medFokus(array $components): array
+    {
         foreach ($components as $component) {
             if ($component instanceof OneTimeCodeInput) {
                 // Attributtverdien escapes ikke: hold JS-en fri for doble anførselstegn.

@@ -10,6 +10,7 @@ Mal for nye Laravel-apper på vps1: Laravel 13, Filament 5, Vite og PHP 8.5
 |---|---|
 | Filament-panel på `/admin` med tofaktor (TOTP), påkrevd i produksjon | `app/Providers/Filament/AdminPanelProvider.php`, `config/admin.php` |
 | MFA-tilpasninger fra amexguiden (fokus på kodefeltet, avvist kode tømmes; Filaments egen auto-innsending fra 5.10) | `app/Filament/Auth/` |
+| Flere autentiseringsapper per bruker (høyst 5), varsel ved endringer og nødvei `mfa:nullstill` (O15) | `app/Filament/Auth/MfaApperAuthentication.php`, `app/Filament/Auth/MfaApper/`, `app/Models/MfaApp.php`, `app/Console/Commands/MfaNullstill.php` |
 | Innloggingsvarsel på e-post, unntatt fra kjente enheter (`/admin/kjent-enhet`) | `app/Listeners/SendBackendLoginAlert.php`, `routes/web.php` |
 | E-post via SMTP2GO-API-et | `app/Mail/Transport/Smtp2goTransport.php` |
 | Helsesjekk `/up` | `bootstrap/app.php` |
@@ -47,6 +48,59 @@ Normalt gjør veiviseren i dash dette (fase 4, steg 5). For hånd:
 
 4. Server og secrets (veiviseren / `dash-nytt-nettsted.sh`): app-bruker, pool, database, Valkey-ACL, vhost,
    sertifikat, deploy-nøkkel og Actions-secrets under.
+
+## Flere MFA-apper (O15)
+
+Hver bruker kan registrere opptil fem autentiseringsapper (TOTP), for eksempel telefonen og
+passordbehandleren. Innlogging godtar en kode fra hvilken som helst av dem. To apper er ikke påkrevd, men
+profilsiden ber om en til når brukeren bare har én.
+
+- **Lagring:** tabellen `mfa_apper` (`navn`, kryptert `hemmelighet`, `sist_brukt_at`, `sist_brukt_steg`).
+  Filaments enkeltkolonne `users.app_authentication_secret` brukes ikke lenger. Gjenopprettingskodene ligger
+  fortsatt på `users` og virker som før.
+- **Gjenbruk:** en kode fra samme eller et eldre tidssteg avvises per app (`sist_brukt_steg`, betinget
+  UPDATE). Kodevinduet og rate limitingen på innloggingen er Filaments, som før.
+- **Profilsiden:** lista viser navn, når appen ble lagt til og sist brukt. Hemmeligheter vises bare i
+  dialogen der appen legges til.
+  - Første app settes opp med Filaments egen handling (passord, QR og gjenopprettingskoder) og får navnet
+    «Første app».
+  - «Legg til app» krever en kode fra den nye appen og en fersk kode fra en app brukeren har fra før.
+  - «Fjern» krever en kode fra en av de andre appene. Siste app kan ikke fjernes når panelet krever MFA
+    (`ADMIN_MFA_REQUIRED`, på i produksjon).
+- **Varsel:** e-post til `ADMIN_ALERT_EMAIL` når en app legges til eller fjernes, og ved `mfa:nullstill`
+  (navn på appen, tidspunkt og IP, aldri hemmeligheten), og en `mfa:`-linje i `laravel.log`.
+
+### Nødvei: alle appene er borte
+
+En gjenopprettingskode gir innlogging, men ikke en ny app: «Legg til app» krever en kode fra en app
+brukeren har. Er alle appene borte, nullstilles MFA fra serveren, som app-brukeren:
+
+```sh
+ssh drift@45.88.201.138
+sudo -iu <app> bash -c 'cd /srv/<app> && php8.5 artisan mfa:nullstill <e-post>'
+```
+
+Kommandoen viser brukeren og appene og spør før den sletter appene og gjenopprettingskodene. Neste
+innlogging ber om ny registrering. Den sender samme varsel som når en app fjernes. Kommandoen finnes ikke i
+dash eller MCP. Lokalt: `php artisan mfa:nullstill <e-post>` (eller `./dev artisan …`).
+
+Til neste innlogging har brukeren bare passordet, og den som logger inn først, registrerer appen. Er
+passordet eller økten kanskje kompromittert, bytt passordet også (`php artisan tinker`), og nullstill rett
+før brukeren selv logger inn.
+
+### Migrering i en app med brukere fra før
+
+1. `2026_10_20_000000_create_mfa_apper_table.php` lager tabellen og kopierer hver eksisterende hemmelighet
+   til `mfa_apper` som «Første app». Verdien kopieres kryptert som den er (samme `APP_KEY`), så ingen må
+   registrere på nytt. Den gamle kolonnen blir stående, men tømmes for en bruker når en app fjernes eller
+   MFA nullstilles, så en tilbakerulling ikke gjør en fjernet app gyldig igjen. Rulles migreringen
+   tilbake, går apper lagt til etterpå tapt.
+2. Når innlogging er bekreftet i drift, flyttes
+   `database/migrations/senere/2026_10_20_000001_drop_app_authentication_secret_from_users.php` til
+   `database/migrations/` i en egen commit, og deployes. Laravel leser ikke `senere/`, så den kjøres ikke
+   før den flyttes. En ny app uten brukere kan flytte den med en gang.
+
+Tester: `tests/Feature/MfaApperTest.php` og `tests/Feature/MfaApperMigreringTest.php`.
 
 ## Deploy-oppsett
 

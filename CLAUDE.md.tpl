@@ -59,7 +59,9 @@
   og pusher.
 - Ingen hemmeligheter i repoet eller i chatten.
 - Ved Filament-oppgradering: sjekk `app/Filament/Auth/` mot ny innebygd oppførsel
-  (`tests/Feature/AdminMfaAutoSubmitTest.php`).
+  (`tests/Feature/AdminMfaAutoSubmitTest.php`, `tests/Feature/MfaApperTest.php`).
+- Tofaktor: flere apper per bruker i `mfa_apper` (README, «Flere MFA-apper»). Mister en bruker alle
+  appene, nullstiller Aksel fra serveren med `mfa:nullstill <e-post>`; aldri fra dash eller MCP.
 
 ## E-post fra terminalen: `mailmd`
 Aksel sender egne e-poster med `mailmd` (`~/.local/bin/mailmd`), som sender Markdown via mail.1kb.no og
