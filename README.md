@@ -11,7 +11,7 @@ Mal for nye Laravel-apper på vps1: Laravel 13, Filament 5, Vite og PHP 8.5
 | Filament-panel på `/admin` med tofaktor (TOTP), påkrevd i produksjon | `app/Providers/Filament/AdminPanelProvider.php`, `config/admin.php` |
 | MFA-tilpasninger fra amexguiden (fokus på kodefeltet, avvist kode tømmes; Filaments egen auto-innsending fra 5.10) | `app/Filament/Auth/` |
 | Flere autentiseringsapper per bruker (høyst 5), varsel ved endringer og nødvei `mfa:nullstill` (O15) | `app/Filament/Auth/MfaApperAuthentication.php`, `app/Filament/Auth/MfaApper/`, `app/Models/MfaApp.php`, `app/Console/Commands/MfaNullstill.php` |
-| Innloggingsvarsel på e-post, unntatt fra kjente enheter (`/admin/kjent-enhet`) | `app/Listeners/SendBackendLoginAlert.php`, `routes/web.php` |
+| Innloggingsvarsel på e-post, unntatt fra kjente enheter (`/admin/kjent-enhet`; signert cookie, HMAC med `ADMIN_KNOWN_DEVICE_TOKEN`, 180 dager) | `app/Listeners/SendBackendLoginAlert.php`, `app/Support/KjentEnhet.php`, `routes/web.php` |
 | E-post via SMTP2GO-API-et | `app/Mail/Transport/Smtp2goTransport.php` |
 | Helsesjekk `/up` | `bootstrap/app.php` |
 | `/sitemap.xml` og IndexNow (`indexnow:send` hver time) | `app/Http/Controllers/SitemapController.php`, `app/Support/IndexNow.php` |

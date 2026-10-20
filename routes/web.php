@@ -1,8 +1,8 @@
 <?php
 
 use App\Http\Controllers\SitemapController;
-use App\Listeners\SendBackendLoginAlert;
 use App\Support\IndexNow;
+use App\Support\KjentEnhet;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'home')->name('home');
@@ -21,12 +21,13 @@ Route::get('/indexnow.txt', function () {
 // Admin håndteres av Filament-panelet på /admin (app/Providers/Filament).
 // Helsesjekk: /up (bootstrap/app.php).
 
-// Merk denne enheten som kjent: innlogginger herfra varsles ikke på e-post.
-// Krever innlogget admin. Cookie i 5 år. 404 når ADMIN_KNOWN_DEVICE_TOKEN ikke er satt.
+// Merk denne enheten som kjent: innlogginger herfra varsles ikke på e-post. Krever innlogget admin.
+// L5 (O17, som dash i F7c): cookien er en HMAC (bruker, utløp, salt) med ADMIN_KNOWN_DEVICE_TOKEN som nøkkel,
+// ikke selve tokenet, og varer i 180 dager. 404 når ADMIN_KNOWN_DEVICE_TOKEN ikke er satt.
 Route::get('/admin/kjent-enhet', function () {
-    $token = config('mail.admin_known_device_token');
-    abort_unless($token, 404);
+    $nokkel = (string) config('mail.admin_known_device_token');
+    abort_if($nokkel === '', 404);
 
-    return response('Denne enheten er nå merket som kjent. Innlogginger herfra varsles ikke lenger på e-post.')
-        ->cookie(SendBackendLoginAlert::KNOWN_DEVICE_COOKIE, $token, 60 * 24 * 365 * 5);
+    return response('Denne enheten er nå merket som kjent i '.KjentEnhet::DAGER.' dager. Innlogginger herfra varsles ikke lenger på e-post.')
+        ->cookie(KjentEnhet::COOKIE, KjentEnhet::lag((int) auth()->id(), $nokkel), 60 * 24 * KjentEnhet::DAGER);
 })->middleware(['auth'])->name('admin.known-device');

@@ -119,8 +119,8 @@ return [
     // Tom verdi slår av varselet.
     'admin_alert_address' => env('ADMIN_ALERT_EMAIL'),
 
-    // Enheter med kjent-enhet-cookien satt til denne verdien varsles ikke.
-    // Cookien settes ved å åpne /admin/kjent-enhet som innlogget admin.
+    // Nøkkelen for kjent-enhet-cookien (HMAC, 180 dager, App\Support\KjentEnhet). Enheter med gyldig
+    // cookie varsles ikke. Cookien settes ved å åpne /admin/kjent-enhet som innlogget admin.
     'admin_known_device_token' => env('ADMIN_KNOWN_DEVICE_TOKEN'),
 
     'from' => [

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Listeners;
 
 use App\Mail\BackendLoginAlert;
+use App\Support\KjentEnhet;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
@@ -14,11 +15,11 @@ use Throwable;
  * event discovery.
  *
  * Ingen varsel når ADMIN_ALERT_EMAIL er tom, eller når innloggingen skjer fra en
- * kjent enhet (cookie satt via /admin/kjent-enhet, se routes/web.php).
+ * kjent enhet (signert cookie fra /admin/kjent-enhet, 180 dager; se App\Support\KjentEnhet).
  */
 class SendBackendLoginAlert
 {
-    public const KNOWN_DEVICE_COOKIE = 'kjent_enhet';
+    public const KNOWN_DEVICE_COOKIE = KjentEnhet::COOKIE;
 
     public function handle(Login $event): void
     {
@@ -28,8 +29,8 @@ class SendBackendLoginAlert
             return;
         }
 
-        $token = config('mail.admin_known_device_token');
-        if ($token && hash_equals((string) $token, (string) request()?->cookie(self::KNOWN_DEVICE_COOKIE))) {
+        $nokkel = (string) config('mail.admin_known_device_token');
+        if ($nokkel !== '' && KjentEnhet::gyldig(request()?->cookie(self::KNOWN_DEVICE_COOKIE), (int) $event->user->getAuthIdentifier(), $nokkel)) {
             return;
         }
 
