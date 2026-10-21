@@ -10,7 +10,9 @@ use Illuminate\Contracts\Auth\Authenticatable;
  * Filaments app-baserte tofaktor (TOTP), med fokus-grep i innloggingsutfordringen:
  *
  *  - kodefeltet får fokus idet det dukker opp (Livewire bytter ut passordskjemaet
- *    uten sideinnlasting, så «autofocus» i HTML virker ikke der), og
+ *    uten sideinnlasting, så «autofocus» i HTML virker ikke der), men bare med mus/styreflate:
+ *    på berøringsskjerm krasjet Chrome og Edge på iPad (Chromium for iOS) når feltet fikk fokus
+ *    i samme øyeblikk som passordskjemaet forsvant – Safari ikke (okt. 2026). Der trykker man selv, og
  *  - etter en avvist kode tømmer Login-siden feltet, og første siffer får fokus igjen.
  *
  * Selve auto-innsendingen gjør Filament selv fra 5.10 (OneTimeCodeInput::submitOnCompletion(),
@@ -58,7 +60,7 @@ class AutoSubmittingAppAuthentication extends AppAuthentication
                     $nextTick(() => focusInput(0));
                 }
             });
-            $nextTick(() => focusInput(0));
+            if (! window.matchMedia('(pointer: coarse)').matches) $nextTick(() => focusInput(0));
             JS;
     }
 }

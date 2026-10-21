@@ -110,6 +110,8 @@ class AdminMfaAutoSubmitTest extends TestCase
 
         $this->assertCount(1, $scripts, 'Nøyaktig ett x-init skal styre fokus.');
         $this->assertStringContainsString("\$watch('state'", $scripts[0]);
+        // Ikke fokus med en gang på berøringsskjerm: Chromium for iOS (Chrome, Edge) krasjet av det.
+        $this->assertStringContainsString("matchMedia('(pointer: coarse)')", $scripts[0]);
         $this->assertStringNotContainsString('&quot;', $scripts[0], 'Skriptet må være fritt for doble anførselstegn (attributtverdien escapes ikke).');
 
         // Skriptet sitter på selve kodekomponenten (Alpine-scope filamentOneTimeCodeInput).
