@@ -131,7 +131,7 @@ class InnloggingsvarselTest extends TestCase
         $cookie = $svar->getCookie(SendBackendLoginAlert::KNOWN_DEVICE_COOKIE, decrypt: false);
         $this->assertNotNull($cookie);
         $this->assertTrue($cookie->isHttpOnly());
-        $this->assertEqualsWithDelta(now()->addDays(KjentEnhet::DAGER)->getTimestamp(), $cookie->getExpiresTime(), 120);
+        $this->assertEqualsWithDelta(now()->getTimestamp() + KjentEnhet::DAGER * 86400, $cookie->getExpiresTime(), 120);
 
         $verdi = (string) $svar->getCookie(SendBackendLoginAlert::KNOWN_DEVICE_COOKIE)?->getValue();
         $this->assertStringNotContainsString(self::TOKEN, $verdi);
