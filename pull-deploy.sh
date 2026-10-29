@@ -42,10 +42,15 @@ flock -n 9 || { echo "FEIL: en deploy kjører allerede" >&2; exit 1; }
 forrige="$(git rev-parse --short HEAD 2>/dev/null || echo ingen)"
 
 logg "Henter deploy-grenen (nå: $forrige)"
-git fetch --quiet origin deploy
+git fetch --quiet --depth=1 origin deploy
 git reset --quiet --hard origin/deploy
 ny="$(git rev-parse --short HEAD)"
 logg "$(git log -1 --format='%h %s')"
+
+# Hvert bygg er en ny orphan-commit med hele vendor og public/build. Uten dette ligger alle
+# tidligere bygg igjen i .git (reflogen holder dem i 90 dager), og mappen vokser for hver deploy.
+git reflog expire --expire=now --all
+git gc --quiet --prune=now
 
 [ -L public/storage ] || "$PHP_BIN" artisan storage:link --no-interaction
 
