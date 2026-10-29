@@ -44,7 +44,7 @@ Normalt gjør veiviseren i dash dette (fase 4, steg 5). For hånd:
    | `{{DATABASE}}` | `eurobonus` (eller `SQLite (database/database.sqlite)`) |
    | `{{CF_SONER}}` | `eurobonus.guide (<sone-ID>)` |
    | `{{MAILMD_FRA}}` | `aksel@amexguiden.no` |
-   | `{{DASH_URL}}` | `https://dash.fjetland.it/apper/eurobonus` |
+   | `{{DASH_URL}}` | `https://port.fjetland.it/apper/eurobonus` |
 
 4. Server og secrets (veiviseren / `dash-nytt-nettsted.sh`): app-bruker, pool, database, Valkey-ACL, vhost,
    sertifikat, deploy-nøkkel og Actions-secrets under.

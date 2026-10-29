@@ -91,7 +91,7 @@ eller `npm` direkte på Macen for denne appen.
 ## Regler
 - Ingen hemmeligheter i repoet eller i chatten. API-nøkler legges i den lokale `.env` av Aksel, og i prod
   via dash eller SSH.
-- Ingen push, deploy eller endringer på vps1, i `Fjetland-IT/vps` eller i `dash.fjetland.it` herfra.
+- Ingen push, deploy eller endringer på vps1, i `Fjetland-IT/vps` eller i `port.fjetland.it` herfra.
 - Ved Filament-oppgradering: sjekk `app/Filament/Auth/` mot ny innebygd oppførsel
   (`tests/Feature/AdminMfaAutoSubmitTest.php`, `tests/Feature/MfaApperTest.php`).
 - Testene skal være grønne både med `./dev test` (MySQL) og i Actions (SQLite).
