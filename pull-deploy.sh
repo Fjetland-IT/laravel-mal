@@ -44,6 +44,10 @@ forrige="$(git rev-parse --short HEAD 2>/dev/null || echo ingen)"
 logg "Henter deploy-grenen (nå: $forrige)"
 git fetch --quiet --depth=1 origin deploy
 git reset --quiet --hard origin/deploy
+# bootstrap/cache står i .gitignore, så reset --hard lar pakkelista fra forrige bygg stå. Er en Composer-pakke
+# fjernet, krasjer Laravel på den gamle providern allerede i migrate (lite.beer 1.11.26, smtp2go-laravel).
+# Laravel bygger begge filene på nytt ved første artisan-kall.
+rm -f bootstrap/cache/packages.php bootstrap/cache/services.php
 ny="$(git rev-parse --short HEAD)"
 logg "$(git log -1 --format='%h %s')"
 
