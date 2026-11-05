@@ -2,6 +2,8 @@
      roller endres, alltid som commit Aksel ser diffen av. Endre gjerne for hånd; dash viser avvik. -->
 # CLAUDE.md – {{VISNINGSNAVN}}
 
+> **Drift:** les `DRIFT.md` før alt som gjelder prod, deploy, database eller server. Den går foran eldre avsnitt her.
+
 ## App og domener
 - Teknisk appnavn: `{{APP}}` (systembruker, database, PHP-FPM-pool og Valkey-prefiks). Fast.
 - Repo: `{{REPO}}`, lokal mappe `~/Dev/{{REPO_NAVN}}`.
@@ -73,5 +75,5 @@ legger en kopi i Sendte elementer. E-post appen selv sender, går via Laravel Ma
   ligger i macOS-nøkkelringen): lag fila og gi Aksel kommandoen.
 
 ## Lenker
-- Dash: {{DASH_URL}}
+- Port: {{DASH_URL}}
 - Prosjektdokumenter: claude.ai-prosjektet «Websecurity & global functions» (`claude/dash-plan-2026-10-15.md`).
