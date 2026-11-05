@@ -56,6 +56,17 @@ Besøksstatistikk finnes både i appen og i port.
 **Logger**: `/srv/<app>/storage/logs/laravel.log` og `storage/logs/deploy.log`, leses med
 `ssh drift@45.88.201.138 'sudo -u <app> tail -50 /srv/<app>/storage/logs/laravel.log'`.
 
+**Serverlogger** (nginx): `/var/log/nginx/<app>.access.log` og `.error.log` med ekte klient-IP (real_ip fra
+`CF-Connecting-IP`), tidspunkt, forespurt adresse og nettlesertype. Roteres daglig og slettes etter 14 dager
+(logrotate). Brukes bare til feilsøking og mot misbruk; appene leser dem ikke. Personverntekst som alle appene
+bruker: «Webserveren fører vanlige driftslogger (tidspunkt, forespurt adresse, IP-adresse, nettlesertype). De
+brukes til feilsøking og til å stoppe misbruk, og slettes etter 14 dager. Grunnlaget er berettiget interesse
+(GDPR art. 6 nr. 1 bokstav f).»
+
+**CSP** settes i Cloudflare (Transform Rule fra port): `frame-ancestors 'self'; object-src 'none'; base-uri 'self'`.
+Ingen `font-src`/`script-src`, så selvhostede fonter og skript trenger ingen CSP-endring. Eksterne ressurser
+(Google Fonts, CDN-er) skal ikke brukes; de er databehandlere som da må inn i personvernteksten.
+
 **Tofaktor** (apper med Filament): flere autentiseringsapper per bruker (`mfa_apper`); mistet alle →
 `mfa:nullstill <e-post>` som appbrukeren. «Kjent enhet» er en HMAC-cookie (180 dager) på
 `ADMIN_KNOWN_DEVICE_TOKEN`; `/admin/kjent-enhet` åpnes på nytt per enhet etter rotasjon.
