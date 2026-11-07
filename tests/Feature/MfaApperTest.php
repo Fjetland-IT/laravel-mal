@@ -167,10 +167,14 @@ class MfaApperTest extends TestCase
         $telefon = $this->nyApp($user, 'Telefon');
         $this->nyApp($user, '1Password');
 
-        $this->loggInnMedKode($user, $this->kode($telefon))->assertHasNoErrors();
+        // Samme kode begge gangene: å regne den ut på nytt gir neste tidssteg hvis 30-sekundersgrensen
+        // passeres mellom kallene, og da er koden nyere og godtas (flaky test).
+        $kode = $this->kode($telefon);
+
+        $this->loggInnMedKode($user, $kode)->assertHasNoErrors();
         auth()->logout();
 
-        $this->loggInnMedKode($user, $this->kode($telefon))->assertHasErrors('data.multiFactor.app.code');
+        $this->loggInnMedKode($user, $kode)->assertHasErrors('data.multiFactor.app.code');
         $this->assertGuest();
 
         // En eldre kode fra samme app (forrige tidssteg) er også sperret.
