@@ -28,6 +28,12 @@ Route::get('/admin/kjent-enhet', function () {
     $nokkel = (string) config('mail.admin_known_device_token');
     abort_if($nokkel === '', 404);
 
-    return response('Denne enheten er nå merket som kjent i '.KjentEnhet::DAGER.' dager. Innlogginger herfra varsles ikke lenger på e-post.')
+    // Liten HTML-side med lenke tilbake til panelet.
+    return response(
+        '<!doctype html><html lang="nb"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+        .'<title>Kjent enhet</title><body style="font-family: system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.5">'
+        .'<p>'.e('Denne enheten er nå merket som kjent i '.KjentEnhet::DAGER.' dager. Innlogginger herfra varsles ikke lenger på e-post.').'</p>'
+        .'<p><a href="'.e(url('/admin')).'">Gå til admin →</a></p>'
+    )
         ->cookie(KjentEnhet::COOKIE, KjentEnhet::lag((int) auth()->id(), $nokkel), 60 * 24 * KjentEnhet::DAGER);
 })->middleware(['auth'])->name('admin.known-device');
